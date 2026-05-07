@@ -3,6 +3,8 @@ import { atualizarAudio } from "../services/audio.js";
 
 const streamAudio = async (req, res) => {
   try {
+    console.log("aqui");
+
     await streamAudioService(req, res);
   } catch (error) {
     console.error(error);
