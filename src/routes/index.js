@@ -23,11 +23,11 @@ const router = (app) => {
     express.json(),
     cors(corsOptions),
     authRouter,
-    verifyToken,
     audioRouter,
+    verifyToken,
     frasesRouter,
-    licoesRouter, 
-    temasRouter
+    licoesRouter,
+    temasRouter,
   );
 };
 
