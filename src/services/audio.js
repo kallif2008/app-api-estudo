@@ -1,16 +1,22 @@
-import { Readable } from "stream";
+import { Readable } from "node:stream";
 import mongoose from "mongoose";
 import { getBucket } from "../config/database.js";
 import Audio from "../models/audio.js";
 
-const salvarAudio = async (file) => {
+const salvarAudio = async (files) => {
+  const arquivo = files?.[0];
+
+  if (!arquivo?.buffer) {
+    throw new Error("Arquivo de audio invalido");
+  }
+
   const bucket = getBucket();
 
-  const stream = Readable.from(file[0].buffer);
+  const stream = Readable.from(arquivo.buffer);
 
   return new Promise((resolve, reject) => {
-    const uploadStream = bucket.openUploadStream(file.originalname, {
-      contentType: file.mimetype,
+    const uploadStream = bucket.openUploadStream(arquivo.originalname, {
+      contentType: arquivo.mimetype,
     });
 
     stream
@@ -114,14 +120,14 @@ const atualizarAudio = async (idLicao, files) => {
 
   const novoAudioId = await salvarAudio(files);
 
-  if(!audioRegistro) {
+  if (!audioRegistro) {
     await Audio.create({
       idLicao,
       idAudio: novoAudioId,
     });
     return;
   }
-  
+
   audioRegistro.idAudio = novoAudioId;
   await audioRegistro.save();
 };

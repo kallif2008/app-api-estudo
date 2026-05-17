@@ -3,15 +3,35 @@ import { salvarAudio, deletarAudioService } from "./audio.js";
 import { parseTextoParaFrases } from "../utils/parse.js";
 import Audio from "../models/audio.js";
 import { translate } from "@vitalets/google-translate-api";
+import { transcreverAudioComTimestamps } from "./transcricaoAudio.js";
 
 const criarFraseService = async (body, files) => {
-  if (files.length > 0) {
+  let totalCriadas = 0;
+
+  if (files?.length > 0) {
     const audioId = await salvarAudio(files);
 
     await Audio.create({
       idLicao: body.idLicao,
       idAudio: audioId,
     });
+
+    const { segmentos } = await transcreverAudioComTimestamps(files[0]);
+
+    if (segmentos.length > 0) {
+      for (const segmento of segmentos) {
+        await Frases.create({
+          idLicao: body.idLicao,
+          frase: segmento.frase,
+          inicioAudio: segmento.inicioAudio,
+          fimAudio: segmento.fimAudio,
+        });
+
+        totalCriadas += 1;
+      }
+
+      return totalCriadas > 0;
+    }
   }
 
   const frases = parseTextoParaFrases(body.frase);
@@ -23,9 +43,11 @@ const criarFraseService = async (body, files) => {
       inicioAudio: 0,
       fimAudio: 0,
     });
+
+    totalCriadas += 1;
   }
 
-  return true;
+  return totalCriadas > 0;
 };
 
 const listarFrasesPorLicaoService = async (idLicao) => {

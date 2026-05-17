@@ -1,0 +1,80 @@
+import fs from "node:fs";
+import path from "node:path";
+import os from "node:os";
+import { randomUUID } from "node:crypto";
+import ffmpeg from "fluent-ffmpeg";
+import { nodewhisper } from "nodejs-whisper";
+
+if (process.env.FFMPEG_PATH) {
+  ffmpeg.setFfmpegPath(process.env.FFMPEG_PATH);
+}
+
+const normalizarSegmentos = (segments = []) =>
+  segments
+    .map((segmento) => ({
+      frase: (segmento.text || "").trim(),
+      inicioAudio: Number(segmento.start ?? 0),
+      fimAudio: Number(segmento.end ?? 0),
+    }))
+    .filter((segmento) => segmento.frase.length > 0);
+
+const transcreverAudioComTimestamps = async (file) => {
+  if (!file?.buffer) {
+    throw new Error("Arquivo de audio invalido para transcricao");
+  }
+
+  const baseName = `audio-${Date.now()}-${randomUUID()}`;
+  const inputPath = path.join(os.tmpdir(), baseName);
+  const wavPath = `${inputPath}.wav`;
+  const jsonPath = `${wavPath}.json`;
+
+  try {
+    await fs.promises.writeFile(inputPath, file.buffer);
+
+    await new Promise((resolve, reject) => {
+      ffmpeg(inputPath)
+        .audioFrequency(16000)
+        .audioChannels(1)
+        .format("wav")
+        .on("end", resolve)
+        .on("error", reject)
+        .save(wavPath);
+    });
+
+    await nodewhisper(path.resolve(wavPath), {
+      modelName: "base",
+      autoDownloadModelName: "base",
+      verbose: false,
+      whisperOptions: {
+        outputInJsonFull: true,
+        language: "pt",
+      },
+    });
+
+    if (!fs.existsSync(jsonPath)) {
+      throw new Error("JSON de transcricao nao foi gerado");
+    }
+
+    const rawJson = await fs.promises.readFile(jsonPath, "utf-8");
+    const data = JSON.parse(rawJson);
+
+    return {
+      textoCompleto: data.transcription || "",
+      segmentos: normalizarSegmentos(data.segments),
+    };
+  } finally {
+    const arquivosTemporarios = [inputPath, wavPath, jsonPath];
+
+    await Promise.all(
+      arquivosTemporarios.map(async (arquivo) => {
+        try {
+          await fs.promises.unlink(arquivo);
+        } catch {
+          // Ignora erro de limpeza de arquivo temporario inexistente.
+        }
+      }),
+    );
+  }
+};
+
+export { transcreverAudioComTimestamps };
