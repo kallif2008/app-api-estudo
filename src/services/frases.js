@@ -17,6 +17,7 @@ const criarFraseService = async (body, files) => {
     });
 
     const { segmentos } = await transcreverAudioComTimestamps(files[0]);
+    console.log("segm", segmentos);
 
     if (segmentos.length > 0) {
       for (const segmento of segmentos) {

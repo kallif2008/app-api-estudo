@@ -18,6 +18,18 @@ const normalizarSegmentos = (segments = []) =>
     }))
     .filter((segmento) => segmento.frase.length > 0);
 
+const transcreverComWhisper = async (wavPath, modelName) => {
+  await nodewhisper(path.resolve(wavPath), {
+    modelName,
+    autoDownloadModelName: modelName,
+    verbose: false,
+    whisperOptions: {
+      outputInJsonFull: true,
+      language: "pt",
+    },
+  });
+};
+
 const transcreverAudioComTimestamps = async (file) => {
   if (!file?.buffer) {
     throw new Error("Arquivo de audio invalido para transcricao");
@@ -41,15 +53,17 @@ const transcreverAudioComTimestamps = async (file) => {
         .save(wavPath);
     });
 
-    await nodewhisper(path.resolve(wavPath), {
-      modelName: "base",
-      autoDownloadModelName: "base",
-      verbose: false,
-      whisperOptions: {
-        outputInJsonFull: true,
-        language: "pt",
-      },
-    });
+    const configuredModel = process.env.WHISPER_MODEL || "base";
+
+    try {
+      await transcreverComWhisper(wavPath, configuredModel);
+    } catch (error) {
+      if (configuredModel === "tiny") {
+        throw error;
+      }
+
+      await transcreverComWhisper(wavPath, "tiny");
+    }
 
     if (!fs.existsSync(jsonPath)) {
       throw new Error("JSON de transcricao nao foi gerado");

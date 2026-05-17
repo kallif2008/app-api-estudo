@@ -13,7 +13,10 @@ services:
       - mongo_data:/data/db
     healthcheck:
       test:
-        ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+        [
+          "CMD-SHELL",
+          'mongosh --quiet --username $$MONGO_INITDB_ROOT_USERNAME --password $$MONGO_INITDB_ROOT_PASSWORD --authenticationDatabase admin --eval "db.adminCommand(''ping'').ok" | grep 1',
+        ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -32,10 +35,13 @@ services:
     environment:
       NODE_ENV: production
       PORT: 5000
-      MONGO_URI: mongodb://root:root@mongo:27017/app_estudo?authSource=admin
+      MONGO_URI: ${MONGO_URI}
       FFMPEG_PATH: /usr/bin/ffmpeg
+      WHISPER_MODEL: tiny
     ports:
       - "5000:5000"
+      - "9229:9229"
+    command: ["node", "--inspect=0.0.0.0:9229", "src/app.js"]
     healthcheck:
       test:
         [

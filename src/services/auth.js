@@ -21,9 +21,13 @@ const cadastrarUsuarioService = async (data) => {
 const loginService = async ({ email, senha }) => {
   const usuario = await Usuario.findOne({ email });
 
+  if (!usuario?.ativo) {
+    throw new Error("Credenciais inválidas");
+  }
+
   const senhaValida = await bcrypt.compare(senha, usuario.senha);
 
-  if (!usuario || !usuario.ativo || !senhaValida) {
+  if (!senhaValida) {
     throw new Error("Credenciais inválidas");
   }
 
