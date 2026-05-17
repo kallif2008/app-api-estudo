@@ -10,13 +10,11 @@ if (process.env.FFMPEG_PATH) {
 }
 
 const normalizarSegmentos = (segments = []) =>
-  segments
-    .map((segmento) => ({
-      frase: (segmento.text || "").trim(),
-      inicioAudio: Number(segmento.start ?? 0),
-      fimAudio: Number(segmento.end ?? 0),
-    }))
-    .filter((segmento) => segmento.frase.length > 0);
+  segments.map((segmento) => ({
+    frase: (segmento.text || "").trim(),
+    inicioAudio: Number(segmento.offsets.from ?? 0),
+    fimAudio: Number(segmento.offsets.to ?? 0),
+  }));
 
 const transcreverComWhisper = async (wavPath, modelName) => {
   await nodewhisper(path.resolve(wavPath), {
@@ -72,10 +70,7 @@ const transcreverAudioComTimestamps = async (file) => {
     const rawJson = await fs.promises.readFile(jsonPath, "utf-8");
     const data = JSON.parse(rawJson);
 
-    return {
-      textoCompleto: data.transcription || "",
-      segmentos: normalizarSegmentos(data.segments),
-    };
+    return normalizarSegmentos(data.transcription);
   } finally {
     const arquivosTemporarios = [inputPath, wavPath, jsonPath];
 

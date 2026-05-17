@@ -8,7 +8,7 @@ import temasRouter from "./temas.js";
 import { verifyToken } from "../middlewares/verificarToken.js";
 
 const corsOptions = {
-  origin: [process.env.FRONT_END],
+  origin: [process.env.FRONT_END, "*"],
   methods: "GET,HEAD,PUT,PATCH,POST,DELETE",
   credentials: true,
   optionsSuccessStatus: 204,
