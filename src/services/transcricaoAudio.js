@@ -10,11 +10,27 @@ if (process.env.FFMPEG_PATH) {
 }
 
 const normalizarSegmentos = (segments = []) =>
-  segments.map((segmento) => ({
-    frase: (segmento.text || "").trim(),
-    inicioAudio: Number(segmento.offsets.from ?? 0),
-    fimAudio: Number(segmento.offsets.to ?? 0),
-  }));
+  segments
+    .map((segmento) => {
+      const rawText = segmento.text || "";
+      const withoutBrackets = rawText.replace(/^\[|\]$/g, "");
+      const normalized = withoutBrackets
+        .normalize("NFD")
+        .replace(/\p{M}/gu, "")
+        .trim()
+        .toUpperCase();
+
+      if (normalized === "MUSICA") {
+        return;
+      }
+
+      return {
+        frase: rawText.trim(),
+        inicioAudio: Number(segmento.offsets.from ?? 0),
+        fimAudio: Number(segmento.offsets.to ?? 0),
+      };
+    })
+    .filter((v) => !!v);
 
 const transcreverComWhisper = async (wavPath, modelName) => {
   await nodewhisper(path.resolve(wavPath), {
@@ -23,7 +39,6 @@ const transcreverComWhisper = async (wavPath, modelName) => {
     verbose: false,
     whisperOptions: {
       outputInJsonFull: true,
-      language: "pt",
     },
   });
 };

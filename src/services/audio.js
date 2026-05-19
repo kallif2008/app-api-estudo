@@ -1,29 +1,69 @@
 import { Readable } from "node:stream";
+import fs from "node:fs";
+import path from "node:path";
+import os from "node:os";
+import { randomUUID } from "node:crypto";
 import mongoose from "mongoose";
+import ffmpeg from "fluent-ffmpeg";
 import { getBucket } from "../config/database.js";
-import Audio from "../models/audio.js";
+import { transcreverAudioComTimestamps } from "./transcricaoAudio.js";
+import Frases from "../models/frases.js";
 
-const salvarAudio = async (files) => {
+if (process.env.FFMPEG_PATH) {
+  ffmpeg.setFfmpegPath(process.env.FFMPEG_PATH);
+}
+
+const comprimirAudio = async (inputPath) => {
+  const outputPath = path.join(os.tmpdir(), `audio-comp-${Date.now()}-${randomUUID()}.mp3`);
+
+  await new Promise((resolve, reject) => {
+    ffmpeg(inputPath)
+      .audioBitrate(64)
+      .audioChannels(1)
+      .audioFrequency(44100)
+      .format("mp3")
+      .on("end", resolve)
+      .on("error", reject)
+      .save(outputPath);
+  });
+
+  return outputPath;
+};
+
+const salvarAudio = async (files, idLicao) => {
   const arquivo = files?.[0];
 
   if (!arquivo?.buffer) {
     throw new Error("Arquivo de audio invalido");
   }
 
-  const bucket = getBucket();
+  const tempInput = path.join(os.tmpdir(), `audio-in-${Date.now()}-${randomUUID()}`);
 
-  const stream = Readable.from(arquivo.buffer);
+  try {
+    await fs.promises.writeFile(tempInput, arquivo.buffer);
 
-  return new Promise((resolve, reject) => {
-    const uploadStream = bucket.openUploadStream(arquivo.originalname, {
-      contentType: arquivo.mimetype,
+    const compressedPath = await comprimirAudio(tempInput);
+    const compressedBuffer = await fs.promises.readFile(compressedPath);
+
+    try { await fs.promises.unlink(compressedPath); } catch {}
+
+    const bucket = getBucket();
+    const stream = Readable.from(compressedBuffer);
+
+    return new Promise((resolve, reject) => {
+      const uploadStream = bucket.openUploadStream("audio.mp3", {
+        contentType: "audio/mpeg",
+        metadata: { idLicao },
+      });
+
+      stream
+        .pipe(uploadStream)
+        .on("error", reject)
+        .on("finish", () => resolve(uploadStream.id.toString()));
     });
-
-    stream
-      .pipe(uploadStream)
-      .on("error", reject)
-      .on("finish", () => resolve(uploadStream.id.toString()));
-  });
+  } finally {
+    try { await fs.promises.unlink(tempInput); } catch {}
+  }
 };
 
 const streamAudioService = async (req, res) => {
@@ -87,49 +127,46 @@ const streamAudioService = async (req, res) => {
   }
 };
 
-const deletarAudioService = async (audioId) => {
-  // 🔒 proteção absoluta
-  if (!audioId || !mongoose.Types.ObjectId.isValid(audioId)) {
-    return;
-  }
+const deletarAudioService = async (idLicao) => {
+  if (!idLicao) return;
 
   const db = mongoose.connection.db;
+
+  const file = await db.collection("audios.files").findOne(
+    { "metadata.idLicao": idLicao },
+    { projection: { _id: 1 } }
+  );
+
+  if (!file) return;
+
   const bucket = new mongoose.mongo.GridFSBucket(db, {
     bucketName: "audios",
   });
 
-  const objectId = new mongoose.Types.ObjectId(audioId);
-
-  const files = await bucket.find({ _id: objectId }).toArray();
-
-  if (!files || files.length === 0) {
-    return;
-  }
-
-  await bucket.delete(objectId);
-
-  return { message: "Áudio removido com sucesso" };
+  await bucket.delete(file._id);
 };
 
 const atualizarAudio = async (idLicao, files) => {
-  const audioRegistro = await Audio.findOne({ idLicao });
+  await deletarAudioService(idLicao);
 
-  if (audioRegistro) {
-    await deletarAudioService(audioRegistro.idAudio);
-  }
+  await salvarAudio(files, idLicao);
 
-  const novoAudioId = await salvarAudio(files);
+  await Frases.deleteMany({ idLicao });
 
-  if (!audioRegistro) {
-    await Audio.create({
+  const segmentos = await transcreverAudioComTimestamps(files[0]);
+
+  if (segmentos.length > 0) {
+    const frases = segmentos.map((segmento) => ({
       idLicao,
-      idAudio: novoAudioId,
-    });
-    return;
-  }
+      frase: segmento.frase,
+      inicioAudio: segmento.inicioAudio,
+      fimAudio: segmento.fimAudio,
+    }));
 
-  audioRegistro.idAudio = novoAudioId;
-  await audioRegistro.save();
+    await Frases.insertMany(frases);
+
+    return frases.length > 0;
+  }
 };
 
 export { salvarAudio, streamAudioService, deletarAudioService, atualizarAudio };
